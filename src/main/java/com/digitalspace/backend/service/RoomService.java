@@ -68,48 +68,71 @@ public class RoomService {
     }
 
     //ADDING NEW MEMBER TO EXISTING ROOM
-    public RoomMemberResponseDTO joinRoom(RoomJoinRequestDTO request){
-        //get room info like id from roomcode
-        Room room=roomrepo.findByRoomCode(request.getRoomCode()).orElseThrow(
-                ()-> new RuntimeException("Room not found")
-        );
-        // Check if the room already has 6 members
+
+    public RoomMemberResponseDTO joinRoom(RoomJoinRequestDTO request) {
+
+        // 1. Validate the request and normalize user input.
+        if (request.getRoomCode() == null || request.getRoomCode().isBlank()) {
+            throw new RuntimeException("Room code is required.");
+        }
+
+        if (request.getNickname() == null || request.getNickname().isBlank()) {
+            throw new RuntimeException("Nickname is required.");
+        }
+
+        if (request.getDisplayName() == null || request.getDisplayName().isBlank()) {
+            throw new RuntimeException("Display name is required.");
+        }
+
+        String roomCode = request.getRoomCode().trim().toUpperCase();
+        String nickname = request.getNickname().trim();
+        String displayName = request.getDisplayName().trim();
+
+        // 2. Find the room.
+        Room room = roomrepo.findByRoomCode(roomCode)
+                .orElseThrow(() -> new RuntimeException("Room not found."));
+
+        // 3. Get the room's current members.
         List<RoomMember> members =
                 roomMemberRepository.findByRoomId(room.getId());
 
+        // 4. Enforce the room's six-member limit.
         if (members.size() >= 6) {
-            throw new RuntimeException("Room is full. Maximum 6 members allowed.");
+            throw new RuntimeException(
+                    "Room is full. Maximum 6 members allowed."
+            );
         }
-        // Check if the nickname is already used in this room
-        boolean nicknameExists =
-                members.stream()
-                        .anyMatch(member ->
-                                member.getNickname()
-                                        .equalsIgnoreCase(
-                                                request.getNickname()
-                                        )
-                        );
+
+        // 5. Check nickname uniqueness among current members only.
+        boolean nicknameExists = members.stream()
+                .anyMatch(member ->
+                        member.getNickname() != null
+                                && member.getNickname()
+                                .equalsIgnoreCase(nickname)
+                );
 
         if (nicknameExists) {
-            throw new RuntimeException("Nickname is already taken in this room.");
+            throw new RuntimeException(
+                    "Nickname is already taken in this room."
+            );
         }
 
-        // Create the new member
+        // 6. Always create a fresh member record.
+        // We do not restore the member who previously left.
         RoomMember member = RoomMember.builder()
                 .room(room)
-                .nickname(request.getNickname())
-                .displayName(request.getDisplayName())
+                .nickname(nickname)
+                .displayName(displayName)
                 .status(MemberStatus.STUDYING)
                 .joinedAt(LocalDateTime.now())
                 .build();
 
-        // Save the member
+        // 7. Save the new member and return its response.
         RoomMember savedMember = roomMemberRepository.save(member);
 
         return roomMemberMapper.toResponseDTO(savedMember);
-
-
     }
+
 
     //LIST OF ALL MEMBER IN THE ROOM
     public List<RoomMemberResponseDTO> getRoomMembers(String roomCode){
